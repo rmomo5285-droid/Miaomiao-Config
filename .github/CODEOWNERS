@@ -1,0 +1,6 @@
+/manifest.payload.json @rmomo5285-droid
+/manifest-signing-public.pem @rmomo5285-droid
+/.github/CODEOWNERS @rmomo5285-droid
+/.github/workflows/publish.yml @rmomo5285-droid
+/worker.js @rmomo5285-droid
+/wrangler.toml @rmomo5285-droid

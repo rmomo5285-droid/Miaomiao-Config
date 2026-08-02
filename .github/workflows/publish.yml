@@ -1,0 +1,280 @@
+name: Publish signed manifest
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '17 2 * * *'
+  push:
+    branches: [main]
+    paths:
+      - manifest.payload.json
+      - manifest-signing-public.pem
+      - worker.js
+      - wrangler.toml
+      - .github/workflows/publish.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: endpoint-manifest
+  cancel-in-progress: false
+
+jobs:
+  expiry-audit:
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout exact workflow commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Verify and audit the deployed signed manifest
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin gh-pages:refs/remotes/origin/gh-pages
+          git show refs/remotes/origin/gh-pages:manifest.json > "$RUNNER_TEMP/deployed-manifest.json"
+          jq -e '
+            ((keys | sort) == ["algorithm", "payload", "signature"]) and
+            .algorithm == "ECDSA_P256_SHA256"
+          ' "$RUNNER_TEMP/deployed-manifest.json"
+          jq -r .payload "$RUNNER_TEMP/deployed-manifest.json" | base64 --decode \
+            > "$RUNNER_TEMP/deployed-payload.json"
+          jq -r .signature "$RUNNER_TEMP/deployed-manifest.json" | base64 --decode \
+            > "$RUNNER_TEMP/deployed-signature.bin"
+          openssl dgst -sha256 -verify manifest-signing-public.pem \
+            -signature "$RUNNER_TEMP/deployed-signature.bin" "$RUNNER_TEMP/deployed-payload.json"
+          expires=$(date --date="$(jq -r .expiresAt "$RUNNER_TEMP/deployed-payload.json")" +%s)
+          now=$(date +%s)
+          remaining_days=$(( (expires - now) / 86400 ))
+          echo "Deployed signed endpoint manifest expires in ${remaining_days} day(s)."
+          if (( remaining_days <= 30 )); then
+            echo 'Renew manifest.payload.json, increment version, sign, and deploy it.' >&2
+            exit 1
+          fi
+
+  sign-and-publish:
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-24.04
+    environment: manifest-production
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout exact workflow commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Verify checkout
+        run: test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+
+      - name: Reject committed private material
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git grep -I -n -E -e '-----BEGIN ([A-Z ]+ )?PRIVATE KEY-----'; then
+            echo 'A private key appears to be tracked by Git.' >&2
+            exit 1
+          fi
+          if git ls-files | grep -E -i '(^|/)[^/]*(private[-_]?key|signing[-_]?key|passphrase)[^/]*$'; then
+            echo 'A private-key or passphrase filename appears to be tracked by Git.' >&2
+            exit 1
+          fi
+
+      - name: Validate payload
+        run: |
+          set -euo pipefail
+          test "$(wc -c < manifest.payload.json)" -le 65536
+          jq -e '
+            ((keys | sort) == ["apiEndpoints", "bootstrapMirrors", "downloadPageUrl", "expiresAt", "issuedAt", "migrationNotice", "registrationUrl", "schema", "version"]) and
+            .schema == 1 and
+            (.version | type == "number" and . > 0 and . <= 9007199254740991 and floor == .) and
+            (.issuedAt | type == "string") and
+            (.expiresAt | type == "string") and
+            (.apiEndpoints | type == "array" and length > 0 and length <= 8) and
+            (all(.apiEndpoints[]; type == "string" and length > 0 and length <= 2048 and startswith("https://"))) and
+            ((.apiEndpoints | map(ascii_downcase) | unique | length) == (.apiEndpoints | length)) and
+            (.registrationUrl | type == "string" and length > 0 and length <= 2048 and startswith("https://")) and
+            (.downloadPageUrl | type == "string" and length > 0 and length <= 2048 and startswith("https://")) and
+            (.bootstrapMirrors | type == "array" and length > 0 and length <= 8) and
+            (all(.bootstrapMirrors[]; type == "string" and length > 0 and length <= 2048 and startswith("https://"))) and
+            ((.bootstrapMirrors | map(ascii_downcase) | unique | length) == (.bootstrapMirrors | length)) and
+            (.migrationNotice == null or (
+              (.migrationNotice | type == "object") and
+              ((.migrationNotice | keys | sort) == ["autoApply", "id", "message", "required", "title"]) and
+              (.migrationNotice.id | type == "string" and length > 0 and length <= 128) and
+              (.migrationNotice.title | type == "string" and length > 0 and length <= 200) and
+              (.migrationNotice.message | type == "string" and length > 0 and length <= 4000) and
+              (.migrationNotice.autoApply == true) and
+              (.migrationNotice.required | type == "boolean")
+            ))
+          ' manifest.payload.json
+          issued=$(date --date="$(jq -r .issuedAt manifest.payload.json)" +%s)
+          expires=$(date --date="$(jq -r .expiresAt manifest.payload.json)" +%s)
+          now=$(date +%s)
+          test "$expires" -gt "$issued"
+          test "$issued" -le "$((now + 300))"
+          test "$expires" -gt "$now"
+
+          python3 - <<'PY'
+          import ipaddress
+          import json
+          from datetime import datetime
+          from urllib.parse import urlsplit
+
+          with open("manifest.payload.json", "r", encoding="utf-8") as source:
+              payload = json.load(source)
+
+          def parse_timestamp(raw, name):
+              try:
+                  parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+              except ValueError as error:
+                  raise SystemExit(f"{name} must be RFC 3339: {error}")
+              if parsed.tzinfo is None:
+                  raise SystemExit(f"{name} must include a time-zone offset")
+              return parsed
+
+          def validate_url(raw, kind):
+              parsed = urlsplit(raw)
+              if parsed.scheme.lower() != "https" or not parsed.hostname:
+                  raise SystemExit(f"{kind} must be an absolute HTTPS URL")
+              if parsed.username is not None or parsed.password is not None:
+                  raise SystemExit(f"{kind} must not contain user information")
+              try:
+                  parsed.port
+              except ValueError as error:
+                  raise SystemExit(f"{kind} has an invalid port: {error}")
+              host = parsed.hostname.rstrip(".").lower()
+              try:
+                  ipaddress.ip_address(host)
+              except ValueError:
+                  pass
+              else:
+                  raise SystemExit(f"{kind} must use a public DNS host, not an IP literal")
+              if "." not in host or host.endswith(".local"):
+                  raise SystemExit(f"{kind} must use a public DNS host")
+              if kind == "API endpoint" and (parsed.path not in ("", "/") or parsed.query or parsed.fragment):
+                  raise SystemExit("API endpoint must be an HTTPS origin")
+              if kind == "bootstrap mirror" and parsed.fragment:
+                  raise SystemExit("bootstrap mirror must not contain a fragment")
+
+          for endpoint in payload["apiEndpoints"]:
+              validate_url(endpoint, "API endpoint")
+          validate_url(payload["registrationUrl"], "registration URL")
+          validate_url(payload["downloadPageUrl"], "download page URL")
+          for mirror in payload["bootstrapMirrors"]:
+              validate_url(mirror, "bootstrap mirror")
+          issued = parse_timestamp(payload["issuedAt"], "issuedAt")
+          expires = parse_timestamp(payload["expiresAt"], "expiresAt")
+          if expires <= issued:
+              raise SystemExit("expiresAt must be later than issuedAt")
+          PY
+
+      - name: Reject manifest rollback or same-version rewrite
+        run: |
+          set -euo pipefail
+          set +e
+          git ls-remote --exit-code --heads origin gh-pages > "$RUNNER_TEMP/gh-pages-ref"
+          status=$?
+          set -e
+          if test "$status" -eq 0; then
+            git fetch --no-tags origin gh-pages:refs/remotes/origin/gh-pages
+            git cat-file -e refs/remotes/origin/gh-pages:manifest.json
+            previous_payload=$(git show refs/remotes/origin/gh-pages:manifest.json | jq -r .payload)
+            previous_version=$(printf '%s' "$previous_payload" | base64 --decode | jq -r .version)
+            current_version=$(jq -r .version manifest.payload.json)
+            test "$current_version" -ge "$previous_version"
+            if test "$current_version" -eq "$previous_version"; then
+              current_payload=$(base64 -w0 manifest.payload.json)
+              test "$current_payload" = "$previous_payload"
+            fi
+          elif test "$status" -ne 2; then
+            echo 'Could not verify the current gh-pages manifest version.' >&2
+            exit "$status"
+          fi
+
+      - name: Restore signing key
+        env:
+          PRIVATE_KEY: ${{ secrets.MIAOMIAO_MANIFEST_PRIVATE_KEY }}
+          KEY_PASSPHRASE: ${{ secrets.MIAOMIAO_MANIFEST_KEY_PASSPHRASE }}
+        run: |
+          set -euo pipefail
+          test -n "$PRIVATE_KEY"
+          test -n "$KEY_PASSPHRASE"
+          umask 077
+          printf '%s\n' "$PRIVATE_KEY" > private-key.pem
+          printf '%s' "$KEY_PASSPHRASE" > passphrase.txt
+
+      - name: Verify signing key matches embedded public key
+        run: |
+          set -euo pipefail
+          openssl pkey -in private-key.pem -passin file:passphrase.txt -pubout -out derived-public.pem
+          openssl pkey -pubin -in manifest-signing-public.pem -text -noout | grep -F 'ASN1 OID: prime256v1'
+          diff -u \
+            <(openssl pkey -pubin -in manifest-signing-public.pem -pubout) \
+            <(openssl pkey -pubin -in derived-public.pem -pubout)
+
+      - name: Sign exact payload bytes
+        run: |
+          mkdir -p public
+          openssl dgst -sha256 \
+            -sign private-key.pem \
+            -passin file:passphrase.txt \
+            -out signature.bin \
+            manifest.payload.json
+          jq -n \
+            --arg algorithm ECDSA_P256_SHA256 \
+            --arg payload "$(base64 -w0 manifest.payload.json)" \
+            --arg signature "$(base64 -w0 signature.bin)" \
+            '{algorithm: $algorithm, payload: $payload, signature: $signature}' \
+            > public/manifest.json
+          cp manifest-signing-public.pem public/
+          (cd public && sha256sum manifest.json > manifest.json.sha256)
+
+      - name: Remove private material
+        if: always()
+        run: rm -f private-key.pem passphrase.txt signature.bin derived-public.pem
+
+      - name: Publish gh-pages branch
+        uses: peaceiris/actions-gh-pages@84c30a85c19949d7eee79c4ff27748b70285e453 # v4.1.0
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./public
+          force_orphan: true
+
+      - name: Deploy Cloudflare CDN mirror
+        if: vars.ENABLE_CLOUDFLARE_DEPLOY == 'true'
+        uses: cloudflare/wrangler-action@ebbaa1584979971c8614a24965b4405ff95890e0 # v4.0.0
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          wranglerVersion: "4.118.0"
+          command: deploy
+
+      - name: Verify Cloudflare mirror signature
+        if: vars.ENABLE_CLOUDFLARE_DEPLOY == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in {1..12}; do
+            if curl --fail --silent --show-error --location \
+              --output "$RUNNER_TEMP/cdn-manifest.json" \
+              https://cdn.vpnmiao.com/json; then
+              break
+            fi
+            sleep 5
+          done
+          jq -e '((keys | sort) == ["algorithm", "payload", "signature"]) and .algorithm == "ECDSA_P256_SHA256"' \
+            "$RUNNER_TEMP/cdn-manifest.json"
+          jq -r .payload "$RUNNER_TEMP/cdn-manifest.json" | base64 --decode \
+            > "$RUNNER_TEMP/cdn-payload.json"
+          jq -r .signature "$RUNNER_TEMP/cdn-manifest.json" | base64 --decode \
+            > "$RUNNER_TEMP/cdn-signature.bin"
+          cmp manifest.payload.json "$RUNNER_TEMP/cdn-payload.json"
+          openssl dgst -sha256 -verify manifest-signing-public.pem \
+            -signature "$RUNNER_TEMP/cdn-signature.bin" "$RUNNER_TEMP/cdn-payload.json"
