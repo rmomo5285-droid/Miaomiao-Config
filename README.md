@@ -5,9 +5,9 @@ desktop and Android clients. The clients verify every manifest with an embedded
 ECDSA P-256 public key before accepting endpoint or migration-notice changes.
 
 The manifest is deliberately narrow. It can only provide API endpoints,
-registration and download URLs, bootstrap mirrors, and a user-facing migration
-notice. It cannot execute commands, inject arbitrary HTTP requests, or replace
-proxy profiles.
+registration and download URLs, bootstrap mirrors, user-facing notices, and
+client update metadata. It cannot execute commands, inject arbitrary HTTP
+requests, replace proxy profiles, or change proxy cores.
 
 ## Publishing
 
@@ -45,6 +45,11 @@ To move the service to a new domain, edit only these fields and increment
 - `downloadPageUrl`: official client download page.
 - `bootstrapMirrors`: signed-manifest mirrors; keep the stable CDN URL first.
 - `migrationNotice`: optional one-time popup shown after a verified migration.
+- `updates`: optional Android and desktop app-version prompts. Both platforms
+  are required when this object is present.
+
+Xray and sing-box are not configured here. Desktop core updates continue to use
+v2rayN's official upstream release sources.
 
 `worker.js` and `wrangler.toml` provide the first-party CDN path as a
 Cloudflare Worker. In the protected `manifest-production` environment, add
@@ -90,3 +95,37 @@ carry commands or arbitrary request definitions.
   "required": true
 }
 ```
+
+## Client update schema
+
+Only publish `updates` after every supported client can parse this optional
+field. Set each platform to the version that is already available from the
+download URL, then increment the top-level manifest `version`. A target equal to
+the installed app does not produce a popup. Optional updates can be dismissed;
+required updates are shown again until the installed version catches up.
+
+```json
+"updates": {
+  "android": {
+    "version": "2.3.2",
+    "build": 742,
+    "downloadUrl": "https://download.vpnmiao.com/download/index.html",
+    "required": false,
+    "title": "发现新版本",
+    "message": "喵喵 Android 客户端有新版本可用。"
+  },
+  "desktop": {
+    "version": "7.24.5",
+    "build": 72405,
+    "downloadUrl": "https://download.vpnmiao.com/download/index.html",
+    "required": false,
+    "title": "发现新版本",
+    "message": "喵喵桌面客户端有新版本可用。"
+  }
+}
+```
+
+The platform `build` value is a monotonically increasing integer used to
+remember optional dismissals. Never reuse a lower build for a newer release.
+The user-facing download page may route visitors to Windows, macOS, Linux, or
+Android packages, so it can remain the same stable URL for both channels.

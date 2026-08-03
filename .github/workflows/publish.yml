@@ -91,7 +91,19 @@ jobs:
           set -euo pipefail
           test "$(wc -c < manifest.payload.json)" -le 65536
           jq -e '
-            ((keys | sort) == ["apiEndpoints", "bootstrapMirrors", "downloadPageUrl", "expiresAt", "issuedAt", "migrationNotice", "registrationUrl", "schema", "version"]) and
+            def valid_update:
+              type == "object" and
+              ((keys | sort) == ["build", "downloadUrl", "message", "required", "title", "version"]) and
+              (.version | type == "string" and length > 0 and length <= 64 and
+                test("^(0|[1-9][0-9]{0,8})\\.(0|[1-9][0-9]{0,8})\\.(0|[1-9][0-9]{0,8})$")) and
+              (.build | type == "number" and . > 0 and . <= 2147483647 and floor == .) and
+              (.downloadUrl | type == "string" and length > 0 and length <= 2048 and startswith("https://")) and
+              (.required | type == "boolean") and
+              (.title | type == "string" and length > 0 and length <= 200) and
+              (.message | type == "string" and length > 0 and length <= 4000);
+
+            (((keys - ["apiEndpoints", "bootstrapMirrors", "downloadPageUrl", "expiresAt", "issuedAt", "migrationNotice", "registrationUrl", "schema", "updates", "version"]) | length) == 0) and
+            ((["apiEndpoints", "bootstrapMirrors", "downloadPageUrl", "expiresAt", "issuedAt", "registrationUrl", "schema", "version"] - keys) | length == 0) and
             .schema == 1 and
             (.version | type == "number" and . > 0 and . <= 9007199254740991 and floor == .) and
             (.issuedAt | type == "string") and
@@ -112,6 +124,12 @@ jobs:
               (.migrationNotice.message | type == "string" and length > 0 and length <= 4000) and
               (.migrationNotice.autoApply == true) and
               (.migrationNotice.required | type == "boolean")
+            )) and
+            ((has("updates") | not) or (
+              (.updates | type == "object") and
+              ((.updates | keys | sort) == ["android", "desktop"]) and
+              (.updates.android | valid_update) and
+              (.updates.desktop | valid_update)
             ))
           ' manifest.payload.json
           issued=$(date --date="$(jq -r .issuedAt manifest.payload.json)" +%s)
@@ -124,6 +142,7 @@ jobs:
           python3 - <<'PY'
           import ipaddress
           import json
+          import re
           from datetime import datetime
           from urllib.parse import urlsplit
 
@@ -169,6 +188,17 @@ jobs:
           validate_url(payload["downloadPageUrl"], "download page URL")
           for mirror in payload["bootstrapMirrors"]:
               validate_url(mirror, "bootstrap mirror")
+          if "updates" in payload:
+              version_pattern = re.compile(
+                  r"^(0|[1-9][0-9]{0,8})\.(0|[1-9][0-9]{0,8})\.(0|[1-9][0-9]{0,8})$"
+              )
+              for platform in ("android", "desktop"):
+                  update = payload["updates"][platform]
+                  if not version_pattern.fullmatch(update["version"]):
+                      raise SystemExit(f"{platform} update version must be major.minor.patch")
+                  if not update["title"].strip() or not update["message"].strip():
+                      raise SystemExit(f"{platform} update title and message must not be blank")
+                  validate_url(update["downloadUrl"], f"{platform} update download URL")
           issued = parse_timestamp(payload["issuedAt"], "issuedAt")
           expires = parse_timestamp(payload["expiresAt"], "expiresAt")
           if expires <= issued:
