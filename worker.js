@@ -1,6 +1,12 @@
 import manifest from "./public/manifest.json";
 
 const manifestBody = JSON.stringify(manifest);
+const manifestPaths = new Set([
+  "/manifest.json",
+  "/manifest.json/",
+  "/json",
+  "/json/",
+]);
 const responseHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Cache-Control": "public, max-age=300, s-maxage=300, must-revalidate",
@@ -11,7 +17,7 @@ const responseHeaders = {
 export default {
   async fetch(request) {
     const url = new URL(request.url);
-    if (url.pathname !== "/json" && url.pathname !== "/json/") {
+    if (!manifestPaths.has(url.pathname)) {
       return new Response("Not found", { status: 404 });
     }
     if (request.method !== "GET" && request.method !== "HEAD") {

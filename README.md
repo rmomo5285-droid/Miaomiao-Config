@@ -17,12 +17,18 @@ proxy profiles.
 4. GitHub Actions signs the exact payload bytes and deploys `manifest.json` to
    the `gh-pages` branch.
 
-The installed clients try `https://cdn.vpnmiao.com/json` first. That stable URL
-must serve the same signed envelope values as `public/manifest.json` and should
-remain available even when the customer-facing website moves. JSON whitespace
-may differ, so verify the ECDSA signature instead of comparing the response body
-hash with `public/manifest.json.sha256`. GitHub Pages, jsDelivr, and raw GitHub
-are fallback mirrors, not the only client delivery path.
+The installed clients try `https://cdn.vpnmiao.com/manifest.json` first. That
+stable URL must serve the same signed envelope values as `public/manifest.json`
+and should remain available even when the customer-facing website moves. The
+legacy `https://cdn.vpnmiao.com/json` path remains a compatibility alias for the
+same signed response. JSON whitespace may differ, so verify the ECDSA signature
+instead of comparing the response body hash with `public/manifest.json.sha256`.
+GitHub Pages, jsDelivr, and raw GitHub are fallback mirrors, not the only client
+delivery path.
+
+`https://cdn.vpnmiao.com/config.json` is the existing Orange configuration
+endpoint. This repository does not route, overwrite, or otherwise manage that
+path.
 
 Before the first client release, add a second read-only bootstrap mirror on an
 independently registered domain and hosting provider. A mirror under another
@@ -45,9 +51,11 @@ Cloudflare Worker. In the protected `manifest-production` environment, add
 `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`, then set the repository
 variable `ENABLE_CLOUDFLARE_DEPLOY=true`. The token needs Workers Scripts edit,
 Workers Routes edit, and zone read permissions for `vpnmiao.com`. The workflow
-then deploys the same signed envelope to `cdn.vpnmiao.com/json` and verifies its
-ECDSA signature after deployment. Until the variable and secrets are
-configured, the workflow publishes only the independent GitHub mirrors.
+then deploys the same signed envelope to `cdn.vpnmiao.com/manifest.json` (with
+`cdn.vpnmiao.com/json` retained as a compatibility alias) and verifies the
+primary endpoint's ECDSA signature after deployment. Until the variable and
+secrets are configured, the workflow publishes only the independent GitHub
+mirrors.
 
 Required Actions secrets:
 

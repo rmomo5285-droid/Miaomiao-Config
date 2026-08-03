@@ -1,8 +1,8 @@
 {
   "schema": 1,
-  "version": 2,
-  "issuedAt": "2026-08-02T09:10:00Z",
-  "expiresAt": "2027-08-02T09:10:00Z",
+  "version": 3,
+  "issuedAt": "2026-08-03T07:11:26Z",
+  "expiresAt": "2027-08-03T07:11:26Z",
   "apiEndpoints": [
     "https://www.miaonetwork.com",
     "https://www.vpnmiao.com"
@@ -10,7 +10,7 @@
   "registrationUrl": "https://www.miaonetwork.com/#/register",
   "downloadPageUrl": "https://download.vpnmiao.com/download/index.html",
   "bootstrapMirrors": [
-    "https://cdn.vpnmiao.com/json",
+    "https://cdn.vpnmiao.com/manifest.json",
     "https://rmomo5285-droid.github.io/Miaomiao-Config/manifest.json",
     "https://cdn.jsdelivr.net/gh/rmomo5285-droid/Miaomiao-Config@gh-pages/manifest.json",
     "https://raw.githubusercontent.com/rmomo5285-droid/Miaomiao-Config/gh-pages/manifest.json"

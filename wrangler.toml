@@ -5,6 +5,8 @@ workers_dev = false
 preview_urls = false
 
 routes = [
+  { pattern = "cdn.vpnmiao.com/manifest.json", zone_name = "vpnmiao.com" },
+  { pattern = "cdn.vpnmiao.com/manifest.json/*", zone_name = "vpnmiao.com" },
   { pattern = "cdn.vpnmiao.com/json", zone_name = "vpnmiao.com" },
   { pattern = "cdn.vpnmiao.com/json/*", zone_name = "vpnmiao.com" }
 ]
