@@ -49,7 +49,19 @@ Miaomiao 仓库的 README/AGENTS/Actions 工作流和 `Orange-source` 补建，�
 - Config：15 项 Python 测试、payload v3 校验、`bash -n` 与 ShellCheck 全部通过。
 - 三仓库工作流均可由 PyYAML 解析；所有提交前 `git diff --check` 通过。
 
-## 4. 尚未跨越的发布门槛
+## 4. 远端验收与产物
+
+| 范围 | PR | 本次 Actions | 基线 Actions |
+| --- | --- | --- | --- |
+| Android | [#2](https://github.com/rmomo5285-droid/Miaomiao-Android/pull/2) | [30840949815](https://github.com/rmomo5285-droid/Miaomiao-Android/actions/runs/30840949815) 成功 | [30832857654](https://github.com/rmomo5285-droid/Miaomiao-Android/actions/runs/30832857654) 成功 |
+| Desktop | [#1](https://github.com/rmomo5285-droid/Miaomiao-Desktop/pull/1) | [30840948641](https://github.com/rmomo5285-droid/Miaomiao-Desktop/actions/runs/30840948641) 成功 | [30802372206](https://github.com/rmomo5285-droid/Miaomiao-Desktop/actions/runs/30802372206) 成功 |
+| Config | [#1](https://github.com/rmomo5285-droid/Miaomiao-Config/pull/1) | 文档路径不触发 publish | [30812570146](https://github.com/rmomo5285-droid/Miaomiao-Config/actions/runs/30812570146) 与 [Pages 30812589927](https://github.com/rmomo5285-droid/Miaomiao-Config/actions/runs/30812589927) 成功 |
+
+Android Actions 完成图标校验、单测和 unsigned verification APK 组装，但按预发布策略不上传或发布
+正式 APK。Android/Desktop 图标审核 artifact 分别为 `miaomiao-android-orange-icon-review` 和
+`miaomiao-desktop-orange-icon-review`，已下载到工作区 `handoff-artifacts/`。
+
+## 5. 尚未跨越的发布门槛
 
 - 不创建 Tag/Release，不运行 Android 手动签名构建或 Desktop release workflow，不发布正式安装包。
 - 不读取或验证仓库 Secret 内容；Android 签名、Windows Authenticode、macOS Developer ID/公证和 GPG
@@ -59,4 +71,4 @@ Miaomiao 仓库的 README/AGENTS/Actions 工作流和 `Orange-source` 补建，�
 - `sanrokamlan-prog/Orange` 当前对现有 GitHub 身份返回 Not Found，无法核对 `8e9e4eb` 或远端 Actions；
   `Orange-source` 又没有 gitlink 提交元数据，需恢复仓库访问后复核。
 
-正式发布前先完成 PR CI、设备视觉审核、独立镜像和 Secret/签名身份确认，再由负责人明确授权发布。
+正式发布前先完成 PR 审查与合并、设备视觉审核、独立镜像和 Secret/签名身份确认，再由负责人明确授权发布。
