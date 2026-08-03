@@ -16,5 +16,7 @@ derived-public.pem
 passphrase.txt
 private-key.pem
 signature.bin
+__pycache__/
+*.py[cod]
 
 !manifest-signing-public.pem

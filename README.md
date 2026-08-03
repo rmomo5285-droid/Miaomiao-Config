@@ -73,6 +73,42 @@ Optional Cloudflare deployment secrets and variable:
 - `CLOUDFLARE_ACCOUNT_ID`: Cloudflare account containing `vpnmiao.com`.
 - `ENABLE_CLOUDFLARE_DEPLOY=true`: repository variable that enables deployment.
 
+Optional VPS deployment secrets and variables:
+
+- `MIAOMIAO_DEPLOY_SSH_PRIVATE_KEY`: dedicated unencrypted ED25519 deploy key.
+- `MIAOMIAO_DEPLOY_SSH_KNOWN_HOSTS`: one pinned ED25519 OpenSSH known-hosts line for the VPS.
+- `MIAOMIAO_DEPLOY_SSH_HOST`: VPS host name or IP address.
+- `MIAOMIAO_DEPLOY_SSH_PORT`: SSH port, normally `22`.
+- `MIAOMIAO_DEPLOY_SSH_USER`: forced-command account, currently `root`.
+- `MIAOMIAO_DEPLOY_ORIGIN_IP`: public VPS IP used to verify the origin directly.
+- `MIAOMIAO_DEPLOY_SSH_KEY_SHA256`: expected deploy-key fingerprint.
+- `MIAOMIAO_DEPLOY_HOST_KEY_SHA256`: expected VPS host-key fingerprint.
+- `ENABLE_VPS_DEPLOY=true`: enables signed-manifest streaming to the VPS.
+
+The VPS key must be restricted in `authorized_keys` to the root-owned
+`ops/miaomiao-manifest-deploy` forced command with OpenSSH's `restrict` option.
+The authorized-key entry has this form:
+
+```text
+restrict,command="/usr/local/sbin/miaomiao-manifest-deploy" ssh-ed25519 PUBLIC_KEY COMMENT
+```
+
+The command accepts only a small JSON envelope on standard input, verifies the
+committed ECDSA public key, rejects expiry and version rollback, and atomically
+replaces only `/var/www/cdn/manifest.json`. It never writes `config.json` and
+does not permit an interactive shell, port forwarding, or file transfer.
+`ops/install-vps-manifest.sh` performs the one-time, fail-closed installation:
+it validates the uploaded public bundle, installs the forced command and shared
+validators, adds only the two exact Nginx locations from the snippet, verifies
+the Nginx configuration before reload, and checks that `config.json` did not
+change.
+`ops/test-vps-manifest-deploy.sh` provides the production smoke test for valid
+replay and malformed inputs while asserting that both CDN JSON files retain
+their expected hashes.
+`ops/restrict-vps-deploy-key.sh` atomically replaces the initially bare deploy
+key with the forced-command form after checking the exact ED25519 fingerprint;
+run it only while a separate administrator session remains open for recovery.
+
 The public key is intentionally committed in `manifest-signing-public.pem`.
 The signing job targets the `manifest-production` Environment. Configure that
 Environment with a required reviewer, protect `main`, and require review for

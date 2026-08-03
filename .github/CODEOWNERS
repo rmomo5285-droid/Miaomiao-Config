@@ -2,5 +2,14 @@
 /manifest-signing-public.pem @rmomo5285-droid
 /.github/CODEOWNERS @rmomo5285-droid
 /.github/workflows/publish.yml @rmomo5285-droid
+/ops/miaomiao-manifest-deploy @rmomo5285-droid
+/ops/install-vps-manifest.sh @rmomo5285-droid
+/ops/nginx-miaomiao-manifest.conf @rmomo5285-droid
+/ops/restrict-vps-deploy-key.sh @rmomo5285-droid
+/ops/test-vps-manifest-deploy.sh @rmomo5285-droid
+/scripts/decode-manifest-envelope.py @rmomo5285-droid
+/scripts/validate-payload.py @rmomo5285-droid
+/tests/test_decode_manifest_envelope.py @rmomo5285-droid
+/tests/test_validate_payload.py @rmomo5285-droid
 /worker.js @rmomo5285-droid
 /wrangler.toml @rmomo5285-droid

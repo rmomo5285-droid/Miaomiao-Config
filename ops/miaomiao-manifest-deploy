@@ -1,0 +1,167 @@
+#!/usr/bin/env bash
+
+set -Eeuo pipefail
+
+PATH=/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
+umask 027
+
+readonly TARGET_DIR=/var/www/cdn
+readonly TARGET_FILE="$TARGET_DIR/manifest.json"
+readonly PUBLIC_KEY=/etc/miaomiao/manifest-signing-public.pem
+readonly ENVELOPE_DECODER=/usr/local/libexec/miaomiao/decode-manifest-envelope.py
+readonly PAYLOAD_VALIDATOR=/usr/local/libexec/miaomiao/validate-payload.py
+readonly STATE_DIR=/var/lib/miaomiao-manifest-deploy
+readonly VERSION_STATE="$STATE_DIR/highest-version"
+readonly LOCK_FILE="$STATE_DIR/deploy.lock"
+readonly MAX_ENVELOPE_BYTES=262144
+readonly MAX_PAYLOAD_BYTES=65536
+readonly MAX_CLOCK_SKEW_SECONDS=300
+
+fail() {
+  printf 'Manifest deployment rejected: %s\n' "$*" >&2
+  exit 1
+}
+
+assert_secure_directory() {
+  local directory=$1
+  local label=$2
+  local mode
+
+  [[ -d "$directory" && ! -L "$directory" ]] || fail "$label is missing or is a symlink"
+  [[ $(stat -c '%U:%G' "$directory") == root:root ]] || fail "$label must be owned by root:root"
+  mode=$(stat -c '%a' "$directory")
+  [[ $mode =~ ^[0-7]{3,4}$ ]] || fail "$label permissions are invalid"
+  (( (8#$mode & 0022) == 0 )) || fail "$label must not be writable by group or other"
+}
+
+verify_envelope() {
+  local envelope_file=$1
+  local payload_file=$2
+  local signature_file=$3
+  local label=$4
+
+  python3 "$ENVELOPE_DECODER" "$envelope_file" "$payload_file" "$signature_file" >/dev/null \
+    || fail "$label encoding or JSON structure is invalid"
+  openssl dgst -sha256 -verify "$PUBLIC_KEY" -signature "$signature_file" "$payload_file" >/dev/null \
+    || fail "$label ECDSA signature is invalid"
+}
+
+[[ $(id -u) -eq 0 ]] || fail 'the forced command must run as root'
+[[ -z ${SSH_ORIGINAL_COMMAND:-} ]] || fail 'remote commands are not permitted'
+[[ -z ${SSH_TTY:-} ]] || fail 'pseudo-terminal sessions are not permitted'
+assert_secure_directory "$TARGET_DIR" 'the target directory'
+assert_secure_directory "${PUBLIC_KEY%/*}" 'the public-key directory'
+assert_secure_directory "${ENVELOPE_DECODER%/*}" 'the manifest-tooling directory'
+[[ -f "$PUBLIC_KEY" && ! -L "$PUBLIC_KEY" ]] || fail 'the signing public key is missing or unsafe'
+[[ $(stat -c '%U:%G:%a' "$PUBLIC_KEY") == root:root:644 ]] || fail 'the signing public key permissions are unsafe'
+[[ -f "$ENVELOPE_DECODER" && ! -L "$ENVELOPE_DECODER" ]] || fail 'the envelope decoder is missing or unsafe'
+[[ $(stat -c '%U:%G:%a' "$ENVELOPE_DECODER") == root:root:644 ]] || fail 'the envelope decoder permissions are unsafe'
+[[ -f "$PAYLOAD_VALIDATOR" && ! -L "$PAYLOAD_VALIDATOR" ]] || fail 'the payload validator is missing or unsafe'
+[[ $(stat -c '%U:%G:%a' "$PAYLOAD_VALIDATOR") == root:root:644 ]] || fail 'the payload validator permissions are unsafe'
+[[ ! -L "$TARGET_FILE" ]] || fail 'the target manifest must not be a symlink'
+
+install -d -o root -g root -m 0700 "$STATE_DIR"
+assert_secure_directory "$STATE_DIR" 'the state directory'
+exec 9>"$LOCK_FILE"
+flock -n 9 || fail 'another deployment is in progress'
+
+work_dir=$(mktemp -d "$STATE_DIR/work.XXXXXX")
+target_new=''
+version_state_new=''
+cleanup() {
+  rm -rf -- "$work_dir"
+  [[ -z $target_new ]] || rm -f -- "$target_new"
+  [[ -z $version_state_new ]] || rm -f -- "$version_state_new"
+}
+trap cleanup EXIT
+trap 'exit 130' HUP INT TERM
+
+target_new=$(mktemp "$TARGET_DIR/.manifest.json.new.XXXXXX")
+version_state_new=$(mktemp "$STATE_DIR/.highest-version.new.XXXXXX")
+
+incoming="$work_dir/manifest.json"
+payload="$work_dir/payload.json"
+signature="$work_dir/signature.bin"
+current_payload="$work_dir/current-payload.json"
+current_signature="$work_dir/current-signature.bin"
+
+dd iflag=fullblock bs=$((MAX_ENVELOPE_BYTES + 1)) count=1 of="$incoming" status=none
+envelope_size=$(stat -c '%s' "$incoming")
+(( envelope_size > 0 && envelope_size <= MAX_ENVELOPE_BYTES )) || fail 'the signed envelope is empty or too large'
+
+verify_envelope "$incoming" "$payload" "$signature" 'the incoming manifest'
+
+payload_size=$(stat -c '%s' "$payload")
+signature_size=$(stat -c '%s' "$signature")
+(( payload_size > 0 && payload_size <= MAX_PAYLOAD_BYTES )) || fail 'the decoded payload is empty or too large'
+(( signature_size >= 64 && signature_size <= 80 )) || fail 'the ECDSA signature size is invalid'
+
+jq -e '
+  type == "object" and
+  .schema == 1 and
+  (.version | type == "number" and . > 0 and . <= 9007199254740991 and floor == .) and
+  (.issuedAt | type == "string" and length > 0) and
+  (.expiresAt | type == "string" and length > 0)
+' "$payload" >/dev/null || fail 'the signed payload metadata is invalid'
+
+python3 "$PAYLOAD_VALIDATOR" "$payload" >/dev/null || fail 'the signed payload contract is invalid'
+
+version=$(jq -er '.version | floor' "$payload")
+issued_at=$(jq -er .issuedAt "$payload")
+expires_at=$(jq -er .expiresAt "$payload")
+issued_epoch=$(date --date="$issued_at" +%s) || fail 'issuedAt is not a valid timestamp'
+expires_epoch=$(date --date="$expires_at" +%s) || fail 'expiresAt is not a valid timestamp'
+now_epoch=$(date +%s)
+
+(( issued_epoch <= now_epoch + MAX_CLOCK_SKEW_SECONDS )) || fail 'issuedAt is too far in the future'
+(( expires_epoch > issued_epoch )) || fail 'expiresAt must be later than issuedAt'
+(( expires_epoch > now_epoch )) || fail 'the signed payload has expired'
+
+payload_sha256=$(sha256sum "$payload" | awk '{print $1}')
+
+state_version=0
+state_payload_sha256=''
+if [[ -e "$VERSION_STATE" ]]; then
+  [[ -f "$VERSION_STATE" && ! -L "$VERSION_STATE" ]] || fail 'the version state is unsafe'
+  read -r state_version state_payload_sha256 state_extra < "$VERSION_STATE"
+  [[ $state_version =~ ^[0-9]+$ ]] || fail 'the version state number is invalid'
+  [[ $state_payload_sha256 =~ ^[0-9a-f]{64}$ ]] || fail 'the version state hash is invalid'
+  [[ -z ${state_extra:-} ]] || fail 'the version state has unexpected fields'
+fi
+
+current_version=0
+current_payload_sha256=''
+if [[ -e "$TARGET_FILE" ]]; then
+  [[ -f "$TARGET_FILE" && ! -L "$TARGET_FILE" ]] || fail 'the current manifest is unsafe'
+  verify_envelope "$TARGET_FILE" "$current_payload" "$current_signature" 'the current manifest'
+  current_version=$(jq -er '.version | select(type == "number" and . > 0 and floor == .) | floor' "$current_payload") \
+    || fail 'the current manifest version is invalid'
+  current_payload_sha256=$(sha256sum "$current_payload" | awk '{print $1}')
+fi
+
+highest_version=$state_version
+(( current_version > highest_version )) && highest_version=$current_version
+(( version >= highest_version )) || fail "version $version would roll back version $highest_version"
+
+if (( version == state_version && state_version > 0 )); then
+  [[ $payload_sha256 == "$state_payload_sha256" ]] \
+    || fail 'the same stored version cannot replace different payload bytes'
+fi
+
+if (( version == current_version && current_version > 0 )) && [[ $payload_sha256 != "$current_payload_sha256" ]]; then
+  if (( version != state_version )) || [[ $payload_sha256 != "$state_payload_sha256" ]]; then
+    fail 'the same current version cannot replace different payload bytes'
+  fi
+fi
+
+install -o root -g root -m 0644 "$incoming" "$target_new"
+mv -Tf -- "$target_new" "$TARGET_FILE"
+
+state_new="$work_dir/highest-version"
+printf '%s %s\n' "$version" "$payload_sha256" > "$state_new"
+install -o root -g root -m 0600 "$state_new" "$version_state_new"
+mv -Tf -- "$version_state_new" "$VERSION_STATE"
+
+manifest_sha256=$(sha256sum "$TARGET_FILE" | awk '{print $1}')
+printf 'Manifest deployed: version=%s sha256=%s\n' "$version" "$manifest_sha256"

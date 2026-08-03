@@ -11,6 +11,15 @@ on:
       - manifest-signing-public.pem
       - worker.js
       - wrangler.toml
+      - ops/miaomiao-manifest-deploy
+      - ops/install-vps-manifest.sh
+      - ops/nginx-miaomiao-manifest.conf
+      - ops/restrict-vps-deploy-key.sh
+      - ops/test-vps-manifest-deploy.sh
+      - scripts/decode-manifest-envelope.py
+      - scripts/validate-payload.py
+      - tests/test_decode_manifest_envelope.py
+      - tests/test_validate_payload.py
       - .github/workflows/publish.yml
 
 permissions:
@@ -37,14 +46,10 @@ jobs:
           set -euo pipefail
           git fetch --no-tags origin gh-pages:refs/remotes/origin/gh-pages
           git show refs/remotes/origin/gh-pages:manifest.json > "$RUNNER_TEMP/deployed-manifest.json"
-          jq -e '
-            ((keys | sort) == ["algorithm", "payload", "signature"]) and
-            .algorithm == "ECDSA_P256_SHA256"
-          ' "$RUNNER_TEMP/deployed-manifest.json"
-          jq -r .payload "$RUNNER_TEMP/deployed-manifest.json" | base64 --decode \
-            > "$RUNNER_TEMP/deployed-payload.json"
-          jq -r .signature "$RUNNER_TEMP/deployed-manifest.json" | base64 --decode \
-            > "$RUNNER_TEMP/deployed-signature.bin"
+          python3 scripts/decode-manifest-envelope.py \
+            "$RUNNER_TEMP/deployed-manifest.json" \
+            "$RUNNER_TEMP/deployed-payload.json" \
+            "$RUNNER_TEMP/deployed-signature.bin"
           openssl dgst -sha256 -verify manifest-signing-public.pem \
             -signature "$RUNNER_TEMP/deployed-signature.bin" "$RUNNER_TEMP/deployed-payload.json"
           expires=$(date --date="$(jq -r .expiresAt "$RUNNER_TEMP/deployed-payload.json")" +%s)
@@ -73,6 +78,20 @@ jobs:
       - name: Verify checkout
         run: test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
 
+      - name: Validate deployment tooling
+        run: |
+          set -euo pipefail
+          bash -n ops/miaomiao-manifest-deploy
+          bash -n ops/install-vps-manifest.sh
+          bash -n ops/restrict-vps-deploy-key.sh
+          bash -n ops/test-vps-manifest-deploy.sh
+          shellcheck \
+            ops/miaomiao-manifest-deploy \
+            ops/install-vps-manifest.sh \
+            ops/restrict-vps-deploy-key.sh \
+            ops/test-vps-manifest-deploy.sh
+          python3 -m unittest discover -s tests -p 'test_*.py' -v
+
       - name: Reject committed private material
         shell: bash
         run: |
@@ -89,6 +108,7 @@ jobs:
       - name: Validate payload
         run: |
           set -euo pipefail
+          python3 scripts/validate-payload.py manifest.payload.json
           test "$(wc -c < manifest.payload.json)" -le 65536
           jq -e '
             def valid_update:
@@ -215,13 +235,22 @@ jobs:
           if test "$status" -eq 0; then
             git fetch --no-tags origin gh-pages:refs/remotes/origin/gh-pages
             git cat-file -e refs/remotes/origin/gh-pages:manifest.json
-            previous_payload=$(git show refs/remotes/origin/gh-pages:manifest.json | jq -r .payload)
-            previous_version=$(printf '%s' "$previous_payload" | base64 --decode | jq -r .version)
+            git show refs/remotes/origin/gh-pages:manifest.json \
+              > "$RUNNER_TEMP/previous-manifest.json"
+            python3 scripts/decode-manifest-envelope.py \
+              "$RUNNER_TEMP/previous-manifest.json" \
+              "$RUNNER_TEMP/previous-payload.json" \
+              "$RUNNER_TEMP/previous-signature.bin"
+            openssl dgst -sha256 -verify manifest-signing-public.pem \
+              -signature "$RUNNER_TEMP/previous-signature.bin" \
+              "$RUNNER_TEMP/previous-payload.json" >/dev/null
+            previous_version=$(jq -er \
+              '.version | select(type == "number" and . > 0 and floor == .) | floor' \
+              "$RUNNER_TEMP/previous-payload.json")
             current_version=$(jq -r .version manifest.payload.json)
             test "$current_version" -ge "$previous_version"
             if test "$current_version" -eq "$previous_version"; then
-              current_payload=$(base64 -w0 manifest.payload.json)
-              test "$current_payload" = "$previous_payload"
+              cmp manifest.payload.json "$RUNNER_TEMP/previous-payload.json"
             fi
           elif test "$status" -ne 2; then
             echo 'Could not verify the current gh-pages manifest version.' >&2
@@ -270,12 +299,68 @@ jobs:
         if: always()
         run: rm -f private-key.pem passphrase.txt signature.bin derived-public.pem
 
-      - name: Publish gh-pages branch
-        uses: peaceiris/actions-gh-pages@84c30a85c19949d7eee79c4ff27748b70285e453 # v4.1.0
-        with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: ./public
-          force_orphan: true
+      - name: Deploy VPS CDN mirror
+        if: vars.ENABLE_VPS_DEPLOY == 'true'
+        shell: bash
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.MIAOMIAO_DEPLOY_SSH_PRIVATE_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.MIAOMIAO_DEPLOY_SSH_KNOWN_HOSTS }}
+          SSH_HOST: ${{ vars.MIAOMIAO_DEPLOY_SSH_HOST }}
+          SSH_PORT: ${{ vars.MIAOMIAO_DEPLOY_SSH_PORT }}
+          SSH_USER: ${{ vars.MIAOMIAO_DEPLOY_SSH_USER }}
+          EXPECTED_KEY_FINGERPRINT: ${{ vars.MIAOMIAO_DEPLOY_SSH_KEY_SHA256 }}
+          EXPECTED_HOST_FINGERPRINT: ${{ vars.MIAOMIAO_DEPLOY_HOST_KEY_SHA256 }}
+        run: |
+          set -euo pipefail
+          test -n "$SSH_PRIVATE_KEY"
+          test -n "$SSH_KNOWN_HOSTS"
+          [[ "$SSH_HOST" =~ ^[A-Za-z0-9.-]+$ ]]
+          [[ "$SSH_PORT" =~ ^[0-9]+$ ]] && (( SSH_PORT >= 1 && SSH_PORT <= 65535 ))
+          [[ "$SSH_USER" =~ ^[a-z_][a-z0-9_-]*$ ]]
+          [[ "$EXPECTED_KEY_FINGERPRINT" =~ ^SHA256:[A-Za-z0-9+/]{43}$ ]]
+          [[ "$EXPECTED_HOST_FINGERPRINT" =~ ^SHA256:[A-Za-z0-9+/]{43}$ ]]
+
+          ssh_dir=$(mktemp -d "$RUNNER_TEMP/miaomiao-ssh.XXXXXX")
+          trap 'rm -rf -- "$ssh_dir"' EXIT
+          private_key="$ssh_dir/deploy-key"
+          known_hosts="$ssh_dir/known_hosts"
+          printf '%s\n' "$SSH_PRIVATE_KEY" | tr -d '\r' > "$private_key"
+          printf '%s\n' "$SSH_KNOWN_HOSTS" | tr -d '\r' > "$known_hosts"
+          chmod 0600 "$private_key" "$known_hosts"
+
+          read -r deploy_key_type _ < <(ssh-keygen -y -f "$private_key")
+          test "$deploy_key_type" = ssh-ed25519
+          key_fingerprint=$(ssh-keygen -lf "$private_key" -E sha256 | awk '{print $2}')
+          test "$key_fingerprint" = "$EXPECTED_KEY_FINGERPRINT"
+
+          mapfile -t known_host_lines < <(sed '/^[[:space:]]*$/d' "$known_hosts")
+          (( ${#known_host_lines[@]} == 1 ))
+          read -r pinned_host pinned_key_type pinned_key_data pinned_extra <<< "${known_host_lines[0]}"
+          test -z "${pinned_extra:-}"
+          test "$pinned_key_type" = ssh-ed25519
+          host_fingerprint=$(ssh-keygen -lf "$known_hosts" -E sha256 | awk 'NR == 1 {print $2}')
+          test "$host_fingerprint" = "$EXPECTED_HOST_FINGERPRINT"
+
+          known_host_target="$SSH_HOST"
+          if [[ "$SSH_PORT" != 22 ]]; then
+            known_host_target="[$SSH_HOST]:$SSH_PORT"
+          fi
+          test "$pinned_host" = "$known_host_target"
+          ssh-keygen -F "$known_host_target" -f "$known_hosts" >/dev/null
+
+          timeout --signal=TERM --kill-after=5s 45s ssh -T \
+            -i "$private_key" \
+            -p "$SSH_PORT" \
+            -o BatchMode=yes \
+            -o ConnectTimeout=15 \
+            -o ConnectionAttempts=1 \
+            -o HostKeyAlgorithms=ssh-ed25519 \
+            -o IdentitiesOnly=yes \
+            -o ServerAliveCountMax=2 \
+            -o ServerAliveInterval=10 \
+            -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$known_hosts" \
+            "$SSH_USER@$SSH_HOST" < public/manifest.json
 
       - name: Deploy Cloudflare CDN mirror
         if: vars.ENABLE_CLOUDFLARE_DEPLOY == 'true'
@@ -286,25 +371,80 @@ jobs:
           wranglerVersion: "4.118.0"
           command: deploy
 
-      - name: Verify Cloudflare mirror signature
-        if: vars.ENABLE_CLOUDFLARE_DEPLOY == 'true'
+      - name: Verify primary CDN mirror signature
+        if: vars.ENABLE_CLOUDFLARE_DEPLOY == 'true' || vars.ENABLE_VPS_DEPLOY == 'true'
         shell: bash
+        env:
+          ENABLE_VPS_DEPLOY: ${{ vars.ENABLE_VPS_DEPLOY }}
+          VPS_ORIGIN_IP: ${{ vars.MIAOMIAO_DEPLOY_ORIGIN_IP }}
         run: |
           set -euo pipefail
-          for attempt in {1..12}; do
-            if curl --fail --silent --show-error --location \
-              --output "$RUNNER_TEMP/cdn-manifest.json" \
-              https://cdn.vpnmiao.com/manifest.json; then
-              break
+          manifest_version=$(jq -r .version manifest.payload.json)
+
+          verify_endpoint() {
+            local label=$1
+            local origin_ip=${2:-}
+            local prefix="$RUNNER_TEMP/$label"
+            local verified=false
+            local -a curl_options=(
+              --fail
+              --silent
+              --show-error
+              --connect-timeout 10
+              --header 'Cache-Control: no-cache'
+              --header 'Pragma: no-cache'
+              --max-filesize 262144
+              --max-time 20
+              --proto '=https'
+              --tlsv1.2
+            )
+            if [[ -n $origin_ip ]]; then
+              curl_options+=(--resolve "cdn.vpnmiao.com:443:$origin_ip")
             fi
-            sleep 5
-          done
-          jq -e '((keys | sort) == ["algorithm", "payload", "signature"]) and .algorithm == "ECDSA_P256_SHA256"' \
-            "$RUNNER_TEMP/cdn-manifest.json"
-          jq -r .payload "$RUNNER_TEMP/cdn-manifest.json" | base64 --decode \
-            > "$RUNNER_TEMP/cdn-payload.json"
-          jq -r .signature "$RUNNER_TEMP/cdn-manifest.json" | base64 --decode \
-            > "$RUNNER_TEMP/cdn-signature.bin"
-          cmp manifest.payload.json "$RUNNER_TEMP/cdn-payload.json"
-          openssl dgst -sha256 -verify manifest-signing-public.pem \
-            -signature "$RUNNER_TEMP/cdn-signature.bin" "$RUNNER_TEMP/cdn-payload.json"
+
+            for attempt in {1..12}; do
+              rm -f \
+                "$prefix-manifest.json" \
+                "$prefix-payload.json" \
+                "$prefix-signature.bin"
+              if curl "${curl_options[@]}" \
+                  --output "$prefix-manifest.json" \
+                  "https://cdn.vpnmiao.com/manifest.json?version=${manifest_version}&attempt=${attempt}&source=${label}" &&
+                python3 scripts/decode-manifest-envelope.py \
+                  "$prefix-manifest.json" \
+                  "$prefix-payload.json" \
+                  "$prefix-signature.bin" &&
+                cmp manifest.payload.json "$prefix-payload.json" &&
+                openssl dgst -sha256 -verify manifest-signing-public.pem \
+                  -signature "$prefix-signature.bin" "$prefix-payload.json" >/dev/null; then
+                verified=true
+                break
+              fi
+              sleep 5
+            done
+            test "$verified" = true
+          }
+
+          verify_endpoint cdn-public
+
+          if [[ $ENABLE_VPS_DEPLOY == true ]]; then
+            python3 - "$VPS_ORIGIN_IP" <<'PY'
+          import ipaddress
+          import sys
+
+          try:
+              address = ipaddress.ip_address(sys.argv[1])
+          except ValueError:
+              raise SystemExit("MIAOMIAO_DEPLOY_ORIGIN_IP must be an IP address") from None
+          if not address.is_global:
+              raise SystemExit("MIAOMIAO_DEPLOY_ORIGIN_IP must be globally routable")
+          PY
+            verify_endpoint vps-origin "$VPS_ORIGIN_IP"
+          fi
+
+      - name: Publish gh-pages branch
+        uses: peaceiris/actions-gh-pages@84c30a85c19949d7eee79c4ff27748b70285e453 # v4.1.0
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./public
+          force_orphan: true
