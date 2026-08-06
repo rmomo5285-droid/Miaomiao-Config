@@ -1,0 +1,20 @@
+[Unit]
+Description=Miaomiao download counter
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 /usr/local/lib/miaomiao/miaomiao-download-counter.py
+User=www-data
+Group=www-data
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadOnlyPaths=/var/www/download
+ReadWritePaths=/var/lib/miaomiao-download-counter
+Restart=on-failure
+RestartSec=2s
+
+[Install]
+WantedBy=multi-user.target
