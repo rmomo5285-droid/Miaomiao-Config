@@ -409,12 +409,14 @@
 
       <article class="platform windows" id="windows">
         <div class="platform-head">
-          <div class="platform-title"><span class="platform-code">WIN</span><div><h2>Windows</h2><p>解压 ZIP 后运行喵喵</p></div></div>
+          <div class="platform-title"><span class="platform-code">WIN</span><div><h2>Windows</h2><p>安装版或解压便携版</p></div></div>
           <span class="version">7.24.6</span>
         </div>
         <div class="downloads">
-          <div class="download-row"><div><strong>Windows x64</strong><span>Intel / AMD 64 位电脑 · <b data-count-for="Miaomiao-7.24.6-windows-x64.zip">0 次下载</b></span></div><a class="button" href="/download/Miaomiao-7.24.6-windows-x64.zip">下载 ZIP</a></div>
-          <div class="download-row"><div><strong>Windows ARM64</strong><span>Windows on ARM 设备 · <b data-count-for="Miaomiao-7.24.6-windows-arm64.zip">0 次下载</b></span></div><a class="button secondary" href="/download/Miaomiao-7.24.6-windows-arm64.zip">下载 ZIP</a></div>
+          <div class="download-row"><div><strong>Windows x64 安装版</strong><span>Intel / AMD 64 位电脑 · 安装向导 · <b data-count-for="Miaomiao-7.24.6-windows-x64-setup.exe">0 次下载</b></span></div><a class="button" href="/download/Miaomiao-7.24.6-windows-x64-setup.exe">下载安装器</a></div>
+          <div class="download-row"><div><strong>Windows x64 便携版</strong><span>无需安装，解压后运行 · <b data-count-for="Miaomiao-7.24.6-windows-x64.zip">0 次下载</b></span></div><a class="button secondary" href="/download/Miaomiao-7.24.6-windows-x64.zip">下载 ZIP</a></div>
+          <div class="download-row"><div><strong>Windows ARM64 安装版</strong><span>Windows on ARM 设备 · 安装向导 · <b data-count-for="Miaomiao-7.24.6-windows-arm64-setup.exe">0 次下载</b></span></div><a class="button" href="/download/Miaomiao-7.24.6-windows-arm64-setup.exe">下载安装器</a></div>
+          <div class="download-row"><div><strong>Windows ARM64 便携版</strong><span>无需安装，解压后运行 · <b data-count-for="Miaomiao-7.24.6-windows-arm64.zip">0 次下载</b></span></div><a class="button secondary" href="/download/Miaomiao-7.24.6-windows-arm64.zip">下载 ZIP</a></div>
         </div>
       </article>
 
@@ -467,7 +469,7 @@
       };
 
       if (ua.includes("windows") || platform.includes("win")) {
-        recommendation = { href: "/download/Miaomiao-7.24.6-windows-x64.zip", label: "Windows x64", detail: "已识别 Windows，推荐 x64 绿色版。" };
+        recommendation = { href: "/download/Miaomiao-7.24.6-windows-x64-setup.exe", label: "Windows x64 安装版", detail: "已识别 Windows，推荐 x64 安装版；也可在下方选择便携版。" };
         recognized = true;
       } else if (ua.includes("android")) {
         recommendation = { href: "/download/miaomiao_2.3.4_universal.apk", label: "Android 通用版", detail: "已识别 Android，通用版兼容性最好。" };
