@@ -1,0 +1,530 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>喵喵客户端下载</title>
+  <style>
+    :root {
+      --ink: #1f2937;
+      --muted: #667085;
+      --line: #dce3ef;
+      --surface: #ffffff;
+      --canvas: #f4f7fb;
+      --primary: #355cc2;
+      --primary-dark: #28499e;
+      --teal: #159a8c;
+      --soft: #edf3ff;
+      --warning: #b65d06;
+      --glass: rgba(255, 255, 255, .52);
+      --glass-strong: rgba(255, 255, 255, .64);
+      --glass-line: rgba(255, 255, 255, .9);
+      --glass-shadow: rgba(38, 55, 88, .15);
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-width: 320px;
+      position: relative;
+      isolation: isolate;
+      background:
+        linear-gradient(rgba(53, 92, 194, .035) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(53, 92, 194, .035) 1px, transparent 1px),
+        var(--canvas);
+      background-size: 72px 72px;
+      color: var(--ink);
+      font-family: Inter, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+      letter-spacing: 0;
+    }
+
+    .landing-watermark {
+      position: fixed;
+      width: min(760px, 52vw);
+      height: auto;
+      right: -12%;
+      top: 50%;
+      z-index: 0;
+      opacity: .024;
+      filter: grayscale(1) contrast(1.2);
+      mix-blend-mode: multiply;
+      transform: translateY(-50%) rotate(-8deg);
+      pointer-events: none;
+    }
+
+    a { color: inherit; }
+
+    .shell {
+      position: relative;
+      z-index: 1;
+      width: min(1160px, calc(100% - 48px));
+      margin: 0 auto;
+      padding: 0 0 56px;
+    }
+
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 24px;
+      min-height: 248px;
+      padding: 52px 0 42px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .brand { max-width: 690px; }
+
+    .eyebrow {
+      margin: 0 0 8px;
+      color: var(--primary);
+      font-size: 13px;
+      font-weight: 700;
+      text-transform: uppercase;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: 46px;
+      line-height: 1.12;
+      font-weight: 760;
+    }
+
+    .intro {
+      margin: 14px 0 0;
+      max-width: 650px;
+      color: var(--muted);
+      font-size: 17px;
+      line-height: 1.8;
+    }
+
+    .release-state {
+      flex: 0 0 auto;
+      min-width: 250px;
+      padding: 19px 21px;
+      border: 1px solid var(--line);
+      border-left: 4px solid var(--teal);
+      border-radius: 7px;
+      outline: 1px solid rgba(166, 185, 214, .42);
+      outline-offset: -1px;
+      background: linear-gradient(145deg, rgba(255, 255, 255, .78), rgba(226, 239, 255, .46));
+      color: var(--ink);
+      box-shadow:
+        0 26px 64px var(--glass-shadow),
+        0 4px 14px rgba(38, 55, 88, .08),
+        inset 0 1px 0 rgba(255, 255, 255, .98),
+        inset 0 -1px 0 rgba(117, 145, 184, .14);
+      -webkit-backdrop-filter: blur(34px) saturate(180%) brightness(1.04);
+      backdrop-filter: blur(34px) saturate(180%) brightness(1.04);
+    }
+
+    .release-state strong,
+    .release-state span { display: block; }
+    .release-state strong { margin-bottom: 8px; font-size: 16px; }
+    .release-state span { color: var(--muted); font-size: 13px; }
+    .release-state span + span {
+      margin-top: 10px;
+      padding-top: 10px;
+      border-top: 1px solid var(--line);
+      color: var(--teal);
+      font-weight: 700;
+    }
+
+    .recommended {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      align-items: center;
+      gap: 24px;
+      margin: 24px 0 18px;
+      padding: 24px 26px;
+      border: 1px solid var(--glass-line);
+      border-radius: 8px;
+      outline: 1px solid rgba(166, 185, 214, .42);
+      outline-offset: -1px;
+      background: linear-gradient(145deg, rgba(255, 255, 255, .8), rgba(226, 239, 255, .44));
+      box-shadow:
+        0 28px 72px var(--glass-shadow),
+        0 5px 16px rgba(38, 55, 88, .08),
+        inset 0 1px 0 rgba(255, 255, 255, 1),
+        inset 0 -1px 0 rgba(117, 145, 184, .14);
+      -webkit-backdrop-filter: blur(36px) saturate(185%) brightness(1.04);
+      backdrop-filter: blur(36px) saturate(185%) brightness(1.04);
+      position: relative;
+      overflow: hidden;
+    }
+
+    .recommended::before {
+      content: "";
+      position: absolute;
+      inset: 0 auto 0 0;
+      width: 5px;
+      background: linear-gradient(180deg, var(--teal), #3775df);
+    }
+
+    .recommended h2 { margin: 0 0 7px; font-size: 21px; }
+    .recommended p { margin: 0; color: var(--muted); line-height: 1.6; }
+    .recommended > div:last-child {
+      display: flex;
+      justify-content: flex-end;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .button {
+      display: inline-flex;
+      min-height: 44px;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 10px 18px;
+      border: 1px solid transparent;
+      border-radius: 7px;
+      background: linear-gradient(135deg, var(--teal), #3775df);
+      color: #fff;
+      font-weight: 700;
+      text-decoration: none;
+      box-shadow: 0 9px 18px rgba(53, 92, 194, .18);
+      transition: transform .18s ease, box-shadow .18s ease, filter .18s ease;
+      cursor: pointer;
+    }
+
+    .button:hover {
+      filter: brightness(.96);
+      box-shadow: 0 12px 24px rgba(53, 92, 194, .24);
+      transform: translateY(-1px);
+    }
+
+    .button:focus-visible {
+      outline: 3px solid rgba(47, 111, 237, .28);
+      outline-offset: 2px;
+    }
+
+    .button:active { transform: translateY(0); }
+
+    .button.secondary {
+      border-color: #ccd5e2;
+      background: #fff;
+      color: var(--ink);
+    }
+
+    .button.secondary:hover { background: var(--soft); box-shadow: none; filter: none; }
+
+    .platforms {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 16px;
+    }
+
+    .platform {
+      position: relative;
+      overflow: hidden;
+      min-width: 0;
+      padding: 24px 22px 20px;
+      border: 1px solid var(--glass-line);
+      border-radius: 8px;
+      outline: 1px solid rgba(166, 185, 214, .42);
+      outline-offset: -1px;
+      background: linear-gradient(150deg, rgba(255, 255, 255, .8), rgba(229, 241, 255, .43));
+      box-shadow:
+        0 24px 58px rgba(38, 55, 88, .13),
+        0 4px 14px rgba(38, 55, 88, .065),
+        inset 0 1px 0 rgba(255, 255, 255, 1),
+        inset 0 -1px 0 rgba(117, 145, 184, .13);
+      -webkit-backdrop-filter: blur(34px) saturate(180%) brightness(1.04);
+      backdrop-filter: blur(34px) saturate(180%) brightness(1.04);
+      transition: border-color .18s ease, box-shadow .18s ease, transform .18s ease;
+    }
+
+    .platform::before {
+      content: "";
+      position: absolute;
+      inset: 0 0 auto 0;
+      height: 4px;
+      background: linear-gradient(90deg, var(--platform-color), #4f7fda, #42c9c0);
+    }
+
+    .platform:hover {
+      border-color: #becbe1;
+      box-shadow:
+        0 30px 70px rgba(38, 55, 88, .18),
+        0 5px 18px rgba(38, 55, 88, .08),
+        inset 0 1px 0 rgba(255, 255, 255, 1),
+        inset 0 -1px 0 rgba(117, 145, 184, .14);
+      transform: translateY(-2px);
+    }
+
+    .platform.android { --platform-color: #169c73; }
+    .platform.windows { --platform-color: #3978dc; }
+    .platform.macos { --platform-color: #505b66; }
+    .platform.linux { --platform-color: #d47a20; }
+
+    .platform-head {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 18px;
+    }
+
+    .platform-title {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .platform-code {
+      display: inline-flex;
+      width: 42px;
+      height: 42px;
+      align-items: center;
+      justify-content: center;
+      border: 1px solid #d9e2ef;
+      border-radius: 8px;
+      background: rgba(242, 246, 251, .76);
+      color: var(--platform-color);
+      font-family: "Cascadia Mono", Consolas, monospace;
+      font-size: 11px;
+      font-weight: 800;
+    }
+
+    .platform h2 { margin: 0 0 5px; font-size: 22px; }
+    .platform p { margin: 0; color: var(--muted); font-size: 14px; line-height: 1.55; }
+
+    .version {
+      flex: 0 0 auto;
+      padding: 5px 9px;
+      border: 1px solid #d9e2ef;
+      border-radius: 6px;
+      background: rgba(247, 249, 252, .76);
+      color: var(--platform-color);
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    .downloads { display: grid; gap: 10px; }
+
+    .download-row {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      align-items: center;
+      gap: 14px;
+      min-height: 58px;
+      padding: 10px 12px;
+      border-top: 1px solid #edf1f6;
+      transition: background-color .16s ease;
+    }
+
+    .download-row:hover { background: rgba(237, 243, 255, .58); }
+
+    .download-row:first-child { border-top: 0; }
+    .download-row strong, .download-row span { display: block; }
+    .download-row span { margin-top: 3px; color: var(--muted); font-size: 12px; }
+    [data-count-for] { color: var(--platform-color); font-weight: 700; }
+    .download-row .button { min-height: 38px; padding: 8px 14px; font-size: 13px; }
+
+    .verification {
+      margin-top: 18px;
+      padding: 20px 22px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      outline: 1px solid rgba(166, 185, 214, .4);
+      outline-offset: -1px;
+      background: linear-gradient(145deg, rgba(255, 255, 255, .76), rgba(228, 240, 255, .42));
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.7;
+      box-shadow:
+        0 22px 54px rgba(38, 55, 88, .12),
+        inset 0 1px 0 rgba(255, 255, 255, 1),
+        inset 0 -1px 0 rgba(117, 145, 184, .12);
+      -webkit-backdrop-filter: blur(32px) saturate(175%) brightness(1.04);
+      backdrop-filter: blur(32px) saturate(175%) brightness(1.04);
+    }
+
+    .verification a { color: var(--primary); }
+    .notice { color: var(--warning); }
+
+    @media (max-width: 760px) {
+      .landing-watermark { width: 100vw; right: -52%; }
+      .shell { width: min(100% - 24px, 620px); }
+      header { min-height: 0; align-items: stretch; flex-direction: column; padding: 36px 4px 30px; }
+      h1 { font-size: 36px; }
+      .intro { font-size: 15px; }
+      .release-state { min-width: 0; }
+      .recommended { grid-template-columns: 1fr; }
+      .recommended > div:last-child { flex-direction: column; }
+      .recommended .button { width: 100%; }
+      .platforms { grid-template-columns: 1fr; }
+      .platform { padding: 20px 16px; }
+    }
+
+    @media (max-width: 420px) {
+      .download-row { grid-template-columns: 1fr; }
+      .download-row .button { width: 100%; }
+    }
+  </style>
+</head>
+<body>
+  <img class="landing-watermark" src="/download/landing-watermark.jpg" alt="" aria-hidden="true">
+  <main class="shell">
+    <header>
+      <div class="brand">
+        <p class="eyebrow">Miaomiao Clients</p>
+        <h1>喵喵客户端下载</h1>
+        <p class="intro">选择与你的设备架构匹配的正式版本。所有文件均提供 SHA-256 校验与 GPG 签名。</p>
+      </div>
+      <div class="release-state">
+        <strong>稳定版已更新</strong>
+        <span>Android 2.3.4 · Desktop 7.24.6</span>
+        <span id="totalDownloads">累计下载量正在载入</span>
+      </div>
+    </header>
+
+    <section class="recommended" aria-labelledby="recommended-title">
+      <div>
+        <h2 id="recommended-title">为你的设备推荐</h2>
+        <p id="recommendedText" aria-live="polite">正在识别设备，识别成功后将自动下载推荐版本。</p>
+      </div>
+      <div>
+        <a class="button" id="recommendedDownload" href="/download/miaomiao_2.3.4_universal.apk">下载推荐版本</a>
+        <button class="button secondary" id="cancelAutoDownload" type="button">取消自动下载</button>
+      </div>
+    </section>
+
+    <section class="platforms" aria-label="全平台下载">
+      <article class="platform android" id="android">
+        <div class="platform-head">
+          <div class="platform-title"><span class="platform-code">AND</span><div><h2>Android</h2><p>手机、平板与模拟器</p></div></div>
+          <span class="version">2.3.4</span>
+        </div>
+        <div class="downloads">
+          <div class="download-row"><div><strong>通用版</strong><span>无法判断架构时使用 · <b data-count-for="miaomiao_2.3.4_universal.apk">0 次下载</b></span></div><a class="button" href="/download/miaomiao_2.3.4_universal.apk">下载 APK</a></div>
+          <div class="download-row"><div><strong>ARM64</strong><span>多数新款 Android 设备 · <b data-count-for="miaomiao_2.3.4_arm64-v8a.apk">0 次下载</b></span></div><a class="button secondary" href="/download/miaomiao_2.3.4_arm64-v8a.apk">下载</a></div>
+          <div class="download-row"><div><strong>ARMv7</strong><span>32 位旧款设备 · <b data-count-for="miaomiao_2.3.4_armeabi-v7a.apk">0 次下载</b></span></div><a class="button secondary" href="/download/miaomiao_2.3.4_armeabi-v7a.apk">下载</a></div>
+          <div class="download-row"><div><strong>x86_64</strong><span>64 位 Android 模拟器 · <b data-count-for="miaomiao_2.3.4_x86_64.apk">0 次下载</b></span></div><a class="button secondary" href="/download/miaomiao_2.3.4_x86_64.apk">下载</a></div>
+          <div class="download-row"><div><strong>x86</strong><span>32 位 Android 模拟器 · <b data-count-for="miaomiao_2.3.4_x86.apk">0 次下载</b></span></div><a class="button secondary" href="/download/miaomiao_2.3.4_x86.apk">下载</a></div>
+        </div>
+      </article>
+
+      <article class="platform windows" id="windows">
+        <div class="platform-head">
+          <div class="platform-title"><span class="platform-code">WIN</span><div><h2>Windows</h2><p>解压 ZIP 后运行喵喵</p></div></div>
+          <span class="version">7.24.6</span>
+        </div>
+        <div class="downloads">
+          <div class="download-row"><div><strong>Windows x64</strong><span>Intel / AMD 64 位电脑 · <b data-count-for="Miaomiao-7.24.6-windows-x64.zip">0 次下载</b></span></div><a class="button" href="/download/Miaomiao-7.24.6-windows-x64.zip">下载 ZIP</a></div>
+          <div class="download-row"><div><strong>Windows ARM64</strong><span>Windows on ARM 设备 · <b data-count-for="Miaomiao-7.24.6-windows-arm64.zip">0 次下载</b></span></div><a class="button secondary" href="/download/Miaomiao-7.24.6-windows-arm64.zip">下载 ZIP</a></div>
+        </div>
+      </article>
+
+      <article class="platform macos" id="macos">
+        <div class="platform-head">
+          <div class="platform-title"><span class="platform-code">MAC</span><div><h2>macOS</h2><p>根据 Mac 芯片选择 DMG</p></div></div>
+          <span class="version">7.24.6</span>
+        </div>
+        <div class="downloads">
+          <div class="download-row"><div><strong>Apple Silicon</strong><span>M1、M2、M3、M4 系列 · <b data-count-for="Miaomiao-7.24.6-macos-arm64.dmg">0 次下载</b></span></div><a class="button" href="/download/Miaomiao-7.24.6-macos-arm64.dmg">下载 DMG</a></div>
+          <div class="download-row"><div><strong>Intel Mac</strong><span>Intel x64 处理器 · <b data-count-for="Miaomiao-7.24.6-macos-x64.dmg">0 次下载</b></span></div><a class="button secondary" href="/download/Miaomiao-7.24.6-macos-x64.dmg">下载 DMG</a></div>
+        </div>
+      </article>
+
+      <article class="platform linux" id="linux">
+        <div class="platform-head">
+          <div class="platform-title"><span class="platform-code">LNX</span><div><h2>Linux</h2><p>Debian/Ubuntu 与 RPM 系发行版</p></div></div>
+          <span class="version">7.24.6</span>
+        </div>
+        <div class="downloads">
+          <div class="download-row"><div><strong>DEB x64</strong><span>Debian、Ubuntu · <b data-count-for="miaomiao_7.24.6_amd64.deb">0 次下载</b></span></div><a class="button" href="/download/miaomiao_7.24.6_amd64.deb">下载</a></div>
+          <div class="download-row"><div><strong>DEB ARM64</strong><span>ARM64 Debian、Ubuntu · <b data-count-for="miaomiao_7.24.6_arm64.deb">0 次下载</b></span></div><a class="button secondary" href="/download/miaomiao_7.24.6_arm64.deb">下载</a></div>
+          <div class="download-row"><div><strong>RPM x64</strong><span>Fedora、RHEL、Rocky Linux · <b data-count-for="miaomiao-7.24.6-1.x86_64.rpm">0 次下载</b></span></div><a class="button secondary" href="/download/miaomiao-7.24.6-1.x86_64.rpm">下载</a></div>
+          <div class="download-row"><div><strong>RPM ARM64</strong><span>ARM64 RPM 系发行版 · <b data-count-for="miaomiao-7.24.6-1.aarch64.rpm">0 次下载</b></span></div><a class="button secondary" href="/download/miaomiao-7.24.6-1.aarch64.rpm">下载</a></div>
+        </div>
+      </article>
+    </section>
+
+    <section class="verification" aria-label="文件校验">
+      <strong>文件校验：</strong>
+      <a href="/download/SHA256SUMS-android-v2.3.4.txt">Android SHA-256</a> ·
+      <a href="/download/SHA256SUMS-desktop-v7.24.6.txt">Desktop SHA-256</a> ·
+      <a href="/download/miaomiao-release-public-key.asc">GPG 公钥</a>
+      <p class="notice">macOS 包按上游兼容方案提供 GPG 签名，未包含 Apple 公证；Windows 包未包含 Authenticode 签名。</p>
+    </section>
+  </main>
+
+  <script>
+    (() => {
+      const ua = navigator.userAgent.toLowerCase();
+      const platform = (navigator.userAgentData?.platform || navigator.platform || "").toLowerCase();
+      const link = document.getElementById("recommendedDownload");
+      const text = document.getElementById("recommendedText");
+      const cancel = document.getElementById("cancelAutoDownload");
+      let recognized = false;
+      let recommendation = {
+        href: "/download/miaomiao_2.3.4_universal.apk",
+        label: "Android 通用版",
+        detail: "未识别到桌面系统，推荐 Android 通用版。"
+      };
+
+      if (ua.includes("windows") || platform.includes("win")) {
+        recommendation = { href: "/download/Miaomiao-7.24.6-windows-x64.zip", label: "Windows x64", detail: "已识别 Windows，推荐 x64 绿色版。" };
+        recognized = true;
+      } else if (ua.includes("android")) {
+        recommendation = { href: "/download/miaomiao_2.3.4_universal.apk", label: "Android 通用版", detail: "已识别 Android，通用版兼容性最好。" };
+        recognized = true;
+      } else if (ua.includes("mac") || platform.includes("mac")) {
+        recommendation = { href: "/download/Miaomiao-7.24.6-macos-arm64.dmg", label: "macOS Apple Silicon", detail: "已识别 macOS；Intel Mac 请在下方选择 x64。" };
+        recognized = true;
+      } else if (ua.includes("linux") || platform.includes("linux")) {
+        recommendation = { href: "/download/miaomiao_7.24.6_amd64.deb", label: "Linux DEB x64", detail: "已识别 Linux；RPM 或 ARM64 请在下方选择。" };
+        recognized = true;
+      }
+
+      link.href = recommendation.href;
+      let seconds = 5;
+      let timer = null;
+      const renderCountdown = () => {
+        link.textContent = recognized ? `${seconds} 秒后下载 ${recommendation.label}` : `下载 ${recommendation.label}`;
+        text.textContent = recommendation.detail;
+      };
+      renderCountdown();
+
+      if (recognized) {
+        timer = window.setInterval(() => {
+          seconds -= 1;
+          renderCountdown();
+          if (seconds <= 0) {
+            window.clearInterval(timer);
+            window.location.assign(recommendation.href);
+          }
+        }, 1000);
+      } else {
+        cancel.hidden = true;
+      }
+
+      cancel.addEventListener("click", () => {
+        if (timer) window.clearInterval(timer);
+        cancel.hidden = true;
+        link.textContent = `下载 ${recommendation.label}`;
+        text.textContent = `${recommendation.detail} 已取消自动下载。`;
+      });
+
+      fetch("/download/stats.json", { cache: "no-store" })
+        .then((response) => {
+          if (!response.ok) throw new Error(`HTTP ${response.status}`);
+          return response.json();
+        })
+        .then((stats) => {
+          document.getElementById("totalDownloads").textContent = `累计下载 ${Number(stats.total || 0).toLocaleString("zh-CN")} 次`;
+          document.querySelectorAll("[data-count-for]").forEach((element) => {
+            const count = Number(stats.files?.[element.dataset.countFor] || 0);
+            element.textContent = `${count.toLocaleString("zh-CN")} 次下载`;
+          });
+        })
+        .catch(() => {
+          document.getElementById("totalDownloads").textContent = "下载统计暂不可用";
+        });
+    })();
+  </script>
+</body>
+</html>
