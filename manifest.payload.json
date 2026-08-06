@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "version": 3,
-  "issuedAt": "2026-08-03T07:11:26Z",
+  "version": 4,
+  "issuedAt": "2026-08-06T08:07:11Z",
   "expiresAt": "2027-08-03T07:11:26Z",
   "apiEndpoints": [
     "https://www.miaonetwork.com",
@@ -15,5 +15,23 @@
     "https://cdn.jsdelivr.net/gh/rmomo5285-droid/Miaomiao-Config@gh-pages/manifest.json",
     "https://raw.githubusercontent.com/rmomo5285-droid/Miaomiao-Config/gh-pages/manifest.json"
   ],
+  "updates": {
+    "android": {
+      "version": "2.3.4",
+      "build": 744,
+      "downloadUrl": "https://download.vpnmiao.com/download/index.html",
+      "required": false,
+      "title": "喵喵 Android 新版本",
+      "message": "喵喵 Android 2.3.4 已发布，包含订阅刷新与图标显示修复。"
+    },
+    "desktop": {
+      "version": "7.24.6",
+      "build": 72406,
+      "downloadUrl": "https://download.vpnmiao.com/download/index.html",
+      "required": false,
+      "title": "喵喵桌面端新版本",
+      "message": "喵喵桌面端 7.24.6 已发布，支持 Windows、macOS 和 Linux。"
+    }
+  },
   "migrationNotice": null
 }
