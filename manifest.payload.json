@@ -1,13 +1,12 @@
 {
   "schema": 1,
-  "version": 4,
-  "issuedAt": "2026-08-06T08:07:11Z",
+  "version": 5,
+  "issuedAt": "2026-09-21T12:00:00Z",
   "expiresAt": "2027-08-03T07:11:26Z",
   "apiEndpoints": [
-    "https://www.miaonetwork.com",
-    "https://www.vpnmiao.com"
+    "https://app.miaonetwork.com"
   ],
-  "registrationUrl": "https://www.miaonetwork.com/#/register",
+  "registrationUrl": "https://app.miaonetwork.com/#/register",
   "downloadPageUrl": "https://download.vpnmiao.com/download/index.html",
   "bootstrapMirrors": [
     "https://cdn.vpnmiao.com/manifest.json",
@@ -33,5 +32,11 @@
       "message": "喵喵桌面端 7.24.6 已发布，支持 Windows、macOS 和 Linux。"
     }
   },
-  "migrationNotice": null
+  "migrationNotice": {
+    "id": "domain-2026-09",
+    "title": "服务入口已更新",
+    "message": "客户端已自动切换到新的服务入口，本地节点不受影响。",
+    "autoApply": true,
+    "required": true
+  }
 }
